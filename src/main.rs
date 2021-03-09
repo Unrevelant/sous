@@ -1,10 +1,14 @@
-use rusqlite::types::FromSql;
-use druid::widget::{Button, Flex, Label, Split, TextBox, ViewSwitcher};
+// use rusqlite::types::FromSql;
+use druid::widget::{Button, Flex, Label, Split, TextBox, ViewSwitcher, CrossAxisAlignment, Scroll, List};
 use druid::{AppLauncher, Data, Env, Lens, LocalizedString, Widget, WidgetExt, WindowDesc};
+use druid::lens::{self, LensExt};
+use druid::im::Vector;
+use druid::{UnitPoint, Color};
 // use error_chain::error_chain;
 use rusqlite::*;
 use anyhow::Result;
 use regex::Regex;
+// use std::rc::Rc;
 
 // error_chain!{
 //     foreign_links {
@@ -16,9 +20,33 @@ use regex::Regex;
 struct AppState {
     current_view: u32,
     current_text: String,
+    ingredients: Vector<Ingredient>
 }
 
-#[derive(Debug, Clone)]
+enum View {
+    IngredientList,
+    IngredientEdit,
+    RecipeList,
+    RecipeEdit,
+    PantryList,
+    PantryEdit,
+}
+
+// struct IngredientLens(Vector<Ingredient>);
+
+// impl Lens<AppState, Vector<Ingredient>> for IngredientLens {
+//     fn with<V, F: FnOnce(&Vector<Ingredient>) -> V>(&self, data: &AppState, f: F) -> V {
+//         let v = data.ingredients.clone();
+//         f(&v)
+//         // todo!()
+//     }
+
+//     fn with_mut<V, F: FnOnce(&mut Vector<Ingredient>) -> V>(&self, data: &mut AppState, f: F) -> V {
+//         todo!()
+//     }
+// }
+
+#[derive(Debug, Clone, Data, Lens)]
 struct Amount {
     value: u32,
     measurement: String
@@ -48,10 +76,10 @@ impl Amount {
 //     }
 // }
 // name	tags	amount	cost	calories	carbs	fat	protein
-#[derive(Debug, Clone)]
-struct Ingredient<'a> {
+#[derive(Debug, Clone, Lens)]
+struct Ingredient {
     name: String,
-    tags: Vec<&'a str>,
+    tags: Vec<&'static str>,
     amount: Amount,
     cost: f64,
     calories: u32,
@@ -60,7 +88,33 @@ struct Ingredient<'a> {
     protein: f64
 }
 
-impl Ingredient<'_> {
+impl Data for Ingredient {
+    fn same(&self, other: &Self) -> bool { self.name == other.name }
+}
+
+// impl Widget<Ingredient> for Ingredient {
+//     fn event(&mut self, ctx: &mut druid::EventCtx, event: &druid::Event, data: &mut Ingredient, env: &Env) {
+//         todo!()
+//     }
+
+//     fn lifecycle(&mut self, ctx: &mut druid::LifeCycleCtx, event: &druid::LifeCycle, data: &Ingredient, env: &Env) {
+//         todo!()
+//     }
+
+//     fn update(&mut self, ctx: &mut druid::UpdateCtx, old_data: &Ingredient, data: &Ingredient, env: &Env) {
+//         todo!()
+//     }
+
+//     fn layout(&mut self, ctx: &mut druid::LayoutCtx, bc: &druid::BoxConstraints, data: &Ingredient, env: &Env) -> druid::Size {
+//         todo!()
+//     }
+
+//     fn paint(&mut self, ctx: &mut druid::PaintCtx, data: &Ingredient, env: &Env) {
+//         todo!()
+//     }
+// }
+
+impl Ingredient {
     fn describe(self) {
         println!("{} {} of {} costs ${} and contains; {} kcal; {}g carbs; {}g fats; {}g protein.",
             self.amount.value,
@@ -73,9 +127,13 @@ impl Ingredient<'_> {
             self.protein
         )
     }
+
+    fn make_box(self) -> Box<dyn Widget<Ingredient>> {
+        Box::new(Flex::row().with_flex_child(Flex::column().with_flex_child(Label::new(self.name), 1.0), 1.0))
+    }
 }
 
-fn get_ingredients<'a>() -> Result<Vec<Ingredient<'a>>> {
+fn get_ingredients<'a>() -> Result<Vec<Ingredient>> {
     let conn = Connection::open("default.db")?;
     let mut stmt = conn.prepare("SELECT * FROM ingredients")?;
     let ingredient_iter = stmt.query_map(params![], |row| {
@@ -104,19 +162,20 @@ fn get_ingredients<'a>() -> Result<Vec<Ingredient<'a>>> {
 pub fn main() {
     let ingredients = get_ingredients().unwrap();
 
-    for ingredient in ingredients {
-        ingredient.describe();
-    }
+    // for ingredient in ingredients {
+    //     ingredient.describe();
+    // }
 
     let main_window = WindowDesc::new(make_ui).title(LocalizedString::new("Sous Chef"));
     let data = AppState {
         current_view: 0,
         current_text: "Edit me!".to_string(),
+        ingredients: Vector::from(ingredients)
     };
-    // AppLauncher::with_window(main_window)
-    //     .use_simple_logger()
-    //     .launch(data)
-    //     .expect("launch failed");
+    AppLauncher::with_window(main_window)
+        .use_simple_logger()
+        .launch(data)
+        .expect("launch failed");
 }
 
 fn make_ui() -> impl Widget<AppState> {
@@ -136,10 +195,64 @@ fn make_ui() -> impl Widget<AppState> {
         );
     }
 
+    //.border(Color::WHITE, 1.0)
+
+    // let ingredient_list = Scroll::new(
+    //     List::new(|| {
+    //         Label::new(
+    //             |ing: &Ingredient, _env: &_| format!("{}", ing.name)
+    //         )
+    //         .align_vertical(UnitPoint::LEFT)
+    //         .padding(10.0)
+    //         .expand()
+    //         .height(50.0)
+    //     }))
+    //     .vertical();
+    //     .lens(AppState::ingredients);
+        
+        // {
+
     let view_switcher = ViewSwitcher::new(
         |data: &AppState, _env| data.current_view,
         |selector, _data, _env| match selector {
-            0 => Box::new(Label::new("Simple Label").center()),
+            0 => Box::new(
+                Scroll::new(
+                    List::new(|| {Flex::row().with_child(
+                        Flex::column().with_child(
+                            Label::new(
+                                |ing: &Ingredient, _env: &_| format!("{}", ing.name)
+                            )
+                            .align_vertical(UnitPoint::LEFT)
+                            .padding(10.0)
+                            // .expand()
+                        ).with_child(
+                            Label::new(
+                                |ing: &Ingredient, _env: &_| format!("{:?}", ing.tags)
+                            )
+                            .align_vertical(UnitPoint::LEFT)
+                            .padding(10.0)
+                            // .expand()
+                        )).with_child(
+                        Flex::column().with_child(
+                            Label::new(
+                                |ing: &Ingredient, _env: &_| format!("{}{} costs ${}", ing.amount.value, ing.amount.measurement, ing.cost)
+                            )
+                            .align_vertical(UnitPoint::LEFT)
+                            .padding(10.0)
+                            // .expand()
+                        ).with_child(
+                            Label::new(
+                                |ing: &Ingredient, _env: &_| format!("{} calories", ing.calories)
+                            )
+                            .align_vertical(UnitPoint::LEFT)
+                            .padding(10.0)
+                            // .expand()
+                        )
+                        ).must_fill_main_axis(true).border(Color::WHITE, 1.0)
+                    }))
+                    .vertical()
+                    .lens(AppState::ingredients)
+            ),
             1 => Box::new(
                 Button::new("Simple Button").on_click(|_event, _data, _env| {
                     println!("Simple button clicked!");
@@ -176,8 +289,10 @@ fn make_ui() -> impl Widget<AppState> {
             _ => Box::new(Label::new("Unknown").center()),
         },
     );
+        // }
 
     Flex::column()
         .with_child(switcher_column)
         .with_flex_child(view_switcher, 1.0)
+        // .debug_paint_layout()
 }

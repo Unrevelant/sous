@@ -10,9 +10,14 @@ edition = "2018"
 anyhow = "1.0.38"
 clap = "2.33.3"
 dotenv = "0.15.0"
-druid = "0.7.0"
+# druid = "0.7.0"
+im = "15.0.0"
 regex = "1.4.3"
 
 [dependencies.rusqlite]
 version = "*"
 features = ["bundled"]
+
+[dependencies.druid]
+version = "0.7.0"
+features = ["im"]
